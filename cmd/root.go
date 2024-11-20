@@ -31,6 +31,10 @@ Requires an API key for authentication and supports configuration via environmen
 		}
 
 		log.Infof("Push Gateway: %s", pushGatewayURL)
+
+		http.HandleFunc("/health", func(w http.ResponseWriter, request *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
 		http.HandleFunc("/push", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodPost {
 				http.Error(w, "Only POST method is supported", http.StatusMethodNotAllowed)

@@ -57,6 +57,6 @@ jobs:
           tags: |
             schmiddim/spacelift-pushgateway:${{ env.ref }}
             schmiddim/spacelift-pushgateway:${{ env.commit_id }}
-          platforms: linux/amd64 #,linux/arm64
+          platforms: linux/amd64, linux/arm64
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
