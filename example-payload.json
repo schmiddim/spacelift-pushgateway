@@ -1,0 +1,33 @@
+{
+  "branch": "master",
+  "commit": {
+    "author": "hansihamster",
+    "branch": "update-foooo-terraform",
+    "createdAt": 1742103798000000001,
+    "hash": "e9ea5a543fce1b2d52207153f2d580431933b927",
+    "issueId": "INFRA-5032",
+    "message": "INFRA-5032: update foooo terraform",
+    "url": "https://github.com/projects/foo/repos/foo/commits/e9ea5afce1b2d52207153f2d580431933b927"
+  },
+  "labels": [
+    "class:platform",
+    "environment:prod",
+    "feature:enable_log_timestamps",
+    "feature:ignore_runtime_config",
+    "folder:terraform/services/foo",
+    "owner:infra",
+    "product:infra",
+    "region:dehh",
+    "space:stable-terraform-prod",
+    "spacelift:stable",
+    "stack:foo",
+    "tool:terraform",
+    "tool:terragrunt"
+  ],
+  "name": "foo",
+  "namespace": "NS",
+  "projectRoot": "stacks/foo-prod",
+  "repository": "tg-foo",
+  "stackId": "foo-ns-foo-prod",
+  "state": "FINISHED"
+}
