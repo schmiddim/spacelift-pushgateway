@@ -1,21 +1,54 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"io"
 	"net/http"
 	"os"
 	"spacelift-pushgateway/api"
 	"spacelift-pushgateway/helper"
 )
 
+func readJsonFile(filePath string) []byte {
+	jsonData, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Fatalf("Failed to read file: %v", err)
+	}
+	return jsonData
+}
+
+type ValueSplits struct {
+	Path      string
+	Separator string
+}
+
+type Config struct {
+	App struct {
+		Port int
+	}
+
+	Json struct {
+		ValueSplits     []ValueSplits
+		FieldsToExtract []string
+		Rename          []api.Rename
+	}
+	Logging struct {
+		Level  string
+		Format string
+	}
+	Prometheus struct {
+		PushGatewayUrl   string
+		TargetMetric     string
+		TargetMetricHelp string
+		JobName          string
+	}
+}
+
 var (
-	pushGatewayURL string
-	apiKey         string
+	apiKey string
+	config Config
 )
 var rootCmd = &cobra.Command{
 	Use:   "spacelift-pushgateway",
@@ -24,55 +57,57 @@ var rootCmd = &cobra.Command{
 Requires an API key for authentication and supports configuration via environment variables.`,
 	Run: func(cmd *cobra.Command, args []string) {
 
-		gw := api.NewPushGateway(pushGatewayURL)
+		//gw := api.NewPushGateway(config.Prometheus.PushGatewayUrl, config.Prometheus.TargetMetric, config.Prometheus.FieldsToExtract)
+		//
+		//if gw.CheckPushGatewayStatus() != nil {
+		//	log.Fatal(gw.CheckPushGatewayStatus())
+		//}
+		//
+		//log.Infof("Push Gateway: %s", config.Prometheus.PushGatewayUrl)
+		//
 
-		if gw.CheckPushGatewayStatus() != nil {
-			log.Fatal(gw.CheckPushGatewayStatus())
-		}
+		//http.HandleFunc("/push", func(w http.ResponseWriter, r *http.Request) {
+		//	if r.Method != http.MethodPost {
+		//		http.Error(w, "Only POST method is supported", http.StatusMethodNotAllowed)
+		//		return
+		//	}
+		//	authHeader := r.Header.Get("Authorization")
+		//
+		//	if authHeader != fmt.Sprintf("Bearer %s", apiKey) {
+		//		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		//		return
+		//	}
+		//	body, err := io.ReadAll(r.Body)
+		//	if err != nil {
+		//		http.Error(w, "Unable to read request body", http.StatusInternalServerError)
+		//		return
+		//	}
+		//	defer func(Body io.ReadCloser) {
+		//		err := Body.Close()
+		//		if err != nil {
+		//			log.Fatal("Error closing body")
+		//		}
+		//	}(r.Body)
+		//
+		//	var payload api.SpaceLiftPayload
+		//	if err := json.Unmarshal(body, &payload); err != nil {
+		//		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		//		return
+		//	}
+		//	fieldsToExtract := []string{"branch", "name", "namespace", "commit.author", "commit.hash", "labels"}
+		//	extractor := api.NewExtractor(fieldsToExtract)
+		//	extractedData, err := extractor.Extract(body)
+		//
+		//	fmt.Println(extractedData)
+		//	if err := gw.PushToGateway(payload); err != nil {
+		//		http.Error(w, fmt.Sprintf("Failed to push to Pushgateway: %v", err), http.StatusInternalServerError)
+		//		return
+		//	}
 
-		log.Infof("Push Gateway: %s", pushGatewayURL)
-
-		http.HandleFunc("/health", func(w http.ResponseWriter, request *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})
-		http.HandleFunc("/push", func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodPost {
-				http.Error(w, "Only POST method is supported", http.StatusMethodNotAllowed)
-				return
-			}
-			authHeader := r.Header.Get("Authorization")
-
-			if authHeader != fmt.Sprintf("Bearer %s", apiKey) {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, "Unable to read request body", http.StatusInternalServerError)
-				return
-			}
-			defer func(Body io.ReadCloser) {
-				err := Body.Close()
-				if err != nil {
-					log.Fatal("Error closing body")
-				}
-			}(r.Body)
-
-			var payload api.SpaceLiftPayload
-			if err := json.Unmarshal(body, &payload); err != nil {
-				http.Error(w, "Invalid JSON format", http.StatusBadRequest)
-				return
-			}
-
-			if err := gw.PushToGateway(payload); err != nil {
-				http.Error(w, fmt.Sprintf("Failed to push to Pushgateway: %v", err), http.StatusInternalServerError)
-				return
-			}
-
-			//log.Info("Successfully pushed data to Pushgateway")
-		})
-		log.Println("Server is running on :8080")
-		log.Fatal(http.ListenAndServe(":8080", nil))
+		//log.Info("Successfully pushed data to Pushgateway")
+		//})
+		log.Infof("Server is running on :%d", config.App.Port)
+		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.App.Port), nil))
 	},
 }
 
@@ -88,7 +123,19 @@ func init() {
 	viper.SetDefault("PUSH_GATEWAY_URL", "http://localhost:9091")
 	viper.SetDefault("API_KEY", "extreme-secret-key")
 
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatalf("Error Loading config: %v", err)
+	}
+
+	if err := viper.Unmarshal(&config); err != nil {
+		log.Fatalf("Fehler unmarshalling config: %v", err)
+	}
+	log.Info(config)
 	viper.AutomaticEnv()
-	pushGatewayURL = viper.GetString("PUSH_GATEWAY_URL")
 	apiKey = viper.GetString("API_KEY")
+
 }

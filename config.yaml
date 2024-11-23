@@ -1,0 +1,51 @@
+app:
+  port: 8080
+logging:
+  level: "debug"
+  format: "json"
+
+json:
+  valueSplits:
+    - path: "$.labels"
+      separator: ":"
+  fieldsToExtract:
+    - "{.branch}"
+    - "{.name}"
+    - "{.namespace}"
+    - "{.projectRoot}"
+    - "{.repository}"
+    - "{.stackId}"
+    - "{.state}"
+    - "{.commit.author}"
+    - "{.commit.branch}"
+    - "{.commit.createdAt}"
+    - "{.commit.hash}"
+    - "{.commit.issueId}"
+    - "{.commit.message}"
+    - "{.commit.url}"
+    - "{.labels.class}"
+  #    - "{.labels}"
+  rename:
+    #    - key: ^labels$
+    #      to: AAAAA
+    - key: labels.class
+      to: class
+    - key: commit.author
+      to: commit_author
+    - key: commit.branch
+      to: commit_branch
+    - key: commit.createdAt  #unable to parse time???
+      to: commit_created_at
+    - key: commit.hash
+      to: commit_hash
+    - key: commit.issueId
+      to: commit_issueId
+    - key: commit.message
+      to: commit_message
+    - key: commit.url
+      to: commit_url
+prometheus:
+  pushGatewayUrl: http://localhost:9091
+  targetMetric: foo_event
+  targetMetricHelp: "this is the help string for my metric"
+  jobName: le_job

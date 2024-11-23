@@ -1,7 +1,8 @@
 # Spacelift Metrics to Prometheus PushGateway
 This project allows you to send Spacelift job metrics to a Prometheus PushGateway. The metrics are collected from Spacelift job payloads and pushed to Prometheus, enabling you to monitor your infrastructure and application states effectively.
 
-
+[![codecov](https://codecov.io/gh/schmiddim/spacelift-pushgateway/graph/badge.svg?token=lxCOCj9JPi)](https://codecov.io/gh/schmiddim/spacelift-pushgateway)
+[![Docker Pulls](https://img.shields.io/docker/pulls/schmiddim/spacelift-pushgateway.svg)](https://hub.docker.com/r/schmiddim/spacelift-pushgateway/)
 
 ## Todo
 - Timestamps
