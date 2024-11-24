@@ -46,6 +46,6 @@ json:
       to: commit_url
 prometheus:
   pushGatewayUrl: http://localhost:9091
-  targetMetric: foo_event
-  targetMetricHelp: "this is the help string for my metric"
-  jobName: le_job
+  targetMetric: super_event
+  targetMetricHelp: "this should be an useful string"
+  jobName: super_job

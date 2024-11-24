@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/push"
+	log "github.com/sirupsen/logrus"
+	"io"
+
 	"net/http"
 	"time"
 )
 
 type PushGateway struct {
-	pushGatewayURL string
-	//fieldsToExtract []string
+	pushGatewayURL   string
 	targetMetric     string
 	targetMetricHelp string
 	jobName          string
@@ -33,7 +35,12 @@ func (p *PushGateway) CheckPushGatewayStatus() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to Pushgateway: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Errorf("failed to close response body: %v", err)
+		}
+	}(resp.Body)
 
 	// Überprüfen, ob der HTTP-Status OK (200) ist
 	if resp.StatusCode != http.StatusOK {
@@ -76,14 +83,19 @@ func keys(labels map[string]interface{}) []string {
 
 func (p *PushGateway) PushMetrics(labelPairs map[string]interface{}) error {
 	output := make(map[string]string)
-
-	//@todo flatten check
-	//@todo created_at is not parsed
-	//@todo check booleans
 	for key, value := range labelPairs {
-		strValue, _ := value.(string)
-
-		output[key] = strValue
+		switch v := value.(type) {
+		case string:
+			output[key] = v
+		case int, int64, float64:
+			output[key] = fmt.Sprintf("%v", v) // Zahlen in String umwandeln
+		case bool:
+			output[key] = fmt.Sprintf("%t", v) // Boolesche Werte in "true"/"false" umwandeln
+		case time.Time:
+			output[key] = v.Format(time.RFC3339) // Zeitstempel als RFC3339-String speichern
+		default:
+			log.Printf("Warning: Ignoring unsupported label type for key '%s'", key)
+		}
 	}
 
 	metric := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -92,42 +104,10 @@ func (p *PushGateway) PushMetrics(labelPairs map[string]interface{}) error {
 		ConstLabels: output,
 	})
 
-	metric.Set(1)
+	metric.Set(float64(time.Now().Unix()))
+
 	err := push.New(p.pushGatewayURL, p.jobName).
 		Collector(metric).
-		Push()
-	if err != nil {
-		return fmt.Errorf("failed to push to Pushgateway: %v", err)
-	}
-
-	return nil
-}
-
-// Deprecated: Use NewFunction with improved parameters.
-func (p *PushGateway) PushToGateway(commitInfo SpaceLiftPayload) error {
-	labelMap := commitInfo.GetLabels()
-	labelMap["name"] = commitInfo.Name
-	labelMap["branch"] = commitInfo.Branch
-	labelMap["state"] = commitInfo.State
-
-	buildStatus := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name:        "spacelift_build_status",
-		Help:        "Build status of the application",
-		ConstLabels: labelMap,
-	})
-	buildStatus.Set(1)
-
-	createdAt := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name:        "spacelift_build_created_at",
-		Help:        "Build creation timestamp",
-		ConstLabels: labelMap,
-	})
-	createdAt.Set(float64(commitInfo.Commit.CreatedAt / 1e9)) // Unix-Zeit in Sekunden
-	//createdAt.Set(float64(time.Now().UnixMilli() / 1e9))
-
-	err := push.New(p.pushGatewayURL, "spacelift_build").
-		Collector(buildStatus).
-		Collector(createdAt).
 		Push()
 	if err != nil {
 		return fmt.Errorf("failed to push to Pushgateway: %v", err)
