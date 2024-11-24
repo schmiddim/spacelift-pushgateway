@@ -1,69 +1,55 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/yalp/jsonpath"
+	"k8s.io/client-go/util/jsonpath"
 	"log"
 	"strings"
 )
 
-type Extractor struct {
-	fieldsToExtract []string
-}
-
-func NewExtractor(fieldsToExtract []string) *Extractor {
-	return &Extractor{fieldsToExtract}
-}
-
-func flattenMap(prefix string, value interface{}, flatMap map[string]string) {
-	switch v := value.(type) {
-	case map[string]interface{}:
-		for key, val := range v {
-			flattenMap(prefix+key+".", val, flatMap)
-		}
-	case []interface{}:
-		for i, item := range v {
-			// Prüfen, ob item ein string ist
-			if str, ok := item.(string); ok {
-				// Überprüfen, ob der string ":" enthält
-				if strings.Contains(str, ":") {
-					// String in Key und Value aufteilen
-					parts := strings.SplitN(str, ":", 2)
-					key := parts[0]
-					value := parts[1]
-					// Key-Value-Paar in flatMap hinzufügen
-					flatMap[fmt.Sprintf("%s%s", prefix, key)] = value
-				} else {
-					// Falls kein ":", füge den ganzen string als Wert hinzu
-					flatMap[fmt.Sprintf("%s%d", prefix, i)] = str
-				}
-			} else {
-				// Rekursiver Aufruf für nicht-string Elemente
-				flattenMap(fmt.Sprintf("%s%d.", prefix, i), item, flatMap)
-			}
-		}
-	default:
-		flatMap[strings.TrimSuffix(prefix, ".")] = fmt.Sprintf("%v", v)
+// ExtractMultipleJSONPaths extracts key-value pairs from JSON data using multiple JSONPath expressions.
+// It returns a flat map where each JSONPath expression yields a key-value pair.
+// If a JSONPath does not match any data, a warning is logged.
+func ExtractMultipleJSONPaths(data []byte, paths []string) (map[string]interface{}, error) {
+	// Unmarshal JSON data into a generic map
+	var jsonData interface{}
+	if err := json.Unmarshal(data, &jsonData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %v", err)
 	}
-}
 
-func (e *Extractor) Extract(jsonData []byte) (map[string]string, error) {
+	// Result map to hold key-value pairs
+	results := make(map[string]interface{})
 
-	var data interface{}
-	if err := json.Unmarshal(jsonData, &data); err != nil {
-		return nil, fmt.Errorf("error unmarshalling data: %v", err)
-	}
-	extractedData := make(map[string]string)
-	for _, field := range e.fieldsToExtract {
-		query := fmt.Sprintf("$.%s", field)
-		value, err := jsonpath.Read(data, query)
-		if err != nil {
-			log.Printf("Warning: Field %s unable to extract: %v", field, err)
+	for _, path := range paths {
+		// Generate a key name based on the JSONPath, e.g., "commit.author" for "{.commit.author}"
+		key := strings.Trim(path, "{}.")
+		jp := jsonpath.New("extractor")
+		if err := jp.Parse(path); err != nil {
+			return nil, fmt.Errorf("failed to parse JSONPath '%s': %v", path, err)
+		}
+
+		// Buffer to hold output
+		var resultBuffer bytes.Buffer
+		if err := jp.Execute(&resultBuffer, jsonData); err != nil {
+			// Log a warning if JSONPath yields no results
+			log.Printf("Warning: No results found for JSONPath '%s'\n", path)
 			continue
 		}
-		flattenMap(field+".", value, extractedData)
+
+		// Try to decode the result as JSON, fallback to string if it fails
+		var extractedValue interface{}
+		rawOutput := resultBuffer.String()
+
+		// Check if JSONPath result is valid JSON array or object
+		if json.Unmarshal([]byte(rawOutput), &extractedValue) != nil {
+			// If it fails, treat raw output as a single string result
+			extractedValue = rawOutput
+		}
+
+		results[key] = extractedValue
 	}
 
-	return extractedData, nil
+	return results, nil
 }
