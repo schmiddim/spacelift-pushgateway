@@ -47,7 +47,12 @@ func TransformJsonValues(data []byte, jsonPath string, separator string) ([]byte
 	if !ok {
 		return nil, fmt.Errorf("expected JSON to be a map but found %T", jsonData)
 	}
-	jsonDataMap["labels"] = labelMap
+
+	//@todo replace dynamic with jsonPath!
+	key := strings.ReplaceAll(jsonPath, "$", "")
+	key = strings.ReplaceAll(key, ".", "")
+
+	jsonDataMap[key] = labelMap
 
 	// Marshal the modified jsonData back into JSON
 	transformedJSON, err := json.MarshalIndent(jsonDataMap, "", "  ")
