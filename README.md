@@ -5,8 +5,7 @@ This project allows you to send Spacelift job metrics to a Prometheus PushGatewa
 [![Docker Pulls](https://img.shields.io/docker/pulls/schmiddim/spacelift-pushgateway.svg)](https://hub.docker.com/r/schmiddim/spacelift-pushgateway/)
 
 ## Todo
-- Timestamps
-- Naming
+- Prometheus Metrics for Pushgateway Communication & Webserver
 
 
 # Setup
