@@ -1,6 +1,7 @@
 module spacelift-pushgateway
 
-go 1.23.0
+go 1.24.0
+
 toolchain go1.24.1
 
 require (
@@ -10,7 +11,7 @@ require (
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
 	github.com/yalp/jsonpath v0.0.0-20180802001716-5cc68e5049a0
-	k8s.io/client-go v0.33.0
+	k8s.io/client-go v0.33.1
 )
 
 require (
