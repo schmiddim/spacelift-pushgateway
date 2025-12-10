@@ -11,7 +11,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/yalp/jsonpath v0.0.0-20180802001716-5cc68e5049a0
-	k8s.io/client-go v0.34.2
+	k8s.io/client-go v0.34.3
 )
 
 require (
