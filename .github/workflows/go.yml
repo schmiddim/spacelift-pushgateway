@@ -9,10 +9,13 @@ on:
         description: 'Semver tag to release (e.g. v0.0.5). Leave empty to auto-increment patch.'
         required: false
         default: ''
+
 jobs:
   build_and_test:
     name: Build & Test the Application
     runs-on: ubuntu-latest
+    outputs:
+      commit_id: ${{ steps.meta.outputs.commit_id }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -20,6 +23,13 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: '1.26.0'
+      - name: Cache Go modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
       - name: Tidy Go modules
         run: |
           go mod tidy
@@ -32,13 +42,6 @@ jobs:
           else
             echo "No changes detected"
           fi
-      - name: Cache Go modules
-        uses: actions/cache@v6
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
       - name: Build
         run: go build -v -o exporter .
       - name: Test
@@ -54,37 +57,23 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Extract branch or tag name
-        run: |
-          REF=$(echo ${GITHUB_REF#refs/*/})
-          COMMIT_ID=${GITHUB_SHA}
-          if [[ "$REF" == "master" ]]; then
-            echo "ref=latest" >> $GITHUB_ENV
-          else
-            echo "ref=$REF" >> $GITHUB_ENV
-          fi
-          echo "commit_id=$COMMIT_ID" >> $GITHUB_ENV
-      - name: Cache Docker layers
-        uses: actions/cache@v6
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-      - name: Build and push
+      - name: Set image metadata
+        id: meta
+        run: echo "commit_id=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+      - name: Build and push (latest + commit sha)
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: |
-            schmiddim/spacelift-pushgateway:${{ env.ref }}
-            schmiddim/spacelift-pushgateway:${{ env.commit_id }}
+            schmiddim/spacelift-pushgateway:latest
+            schmiddim/spacelift-pushgateway:${{ steps.meta.outputs.commit_id }}
           platforms: linux/amd64, linux/arm64
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   release:
-    name: Release (Dependabot Semver)
+    name: Release (Semver)
     needs: build_and_test
     runs-on: ubuntu-latest
     if: |
@@ -105,22 +94,19 @@ jobs:
           git fetch --tags
           if [[ -n "${{ github.event.inputs.version }}" ]]; then
             NEW_TAG="${{ github.event.inputs.version }}"
-            # ensure v prefix
             [[ "$NEW_TAG" != v* ]] && NEW_TAG="v${NEW_TAG}"
           else
             LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n1)
             if [[ -z "$LAST_TAG" ]]; then
               LAST_TAG="v0.0.0"
             fi
-            echo "Last tag: $LAST_TAG"
             MAJOR=$(echo "$LAST_TAG" | sed 's/v//' | cut -d. -f1)
             MINOR=$(echo "$LAST_TAG" | sed 's/v//' | cut -d. -f2)
             PATCH=$(echo "$LAST_TAG" | sed 's/v//' | cut -d. -f3)
-            NEW_PATCH=$((PATCH + 1))
-            NEW_TAG="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+            NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
           fi
           echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
-      - name: Create and push tag
+      - name: Create and push git tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -131,13 +117,49 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - name: Build and push Docker image with Semver tag
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: |
-            schmiddim/spacelift-pushgateway:${{ steps.version.outputs.new_tag }}
-          platforms: linux/amd64, linux/arm64
+      - name: Re-tag existing image with Semver (no rebuild)
+        run: |
+          docker buildx imagetools create \
+            --tag schmiddim/spacelift-pushgateway:${{ steps.version.outputs.new_tag }} \
+            schmiddim/spacelift-pushgateway:${{ needs.build_and_test.outputs.commit_id }}
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ steps.version.outputs.new_tag }} \
+            --title "${{ steps.version.outputs.new_tag }}" \
+            --notes "## Docker Image
+
+          \`\`\`
+          docker pull schmiddim/spacelift-pushgateway:${{ steps.version.outputs.new_tag }}
+          \`\`\`
+
+          ### Helm values.yaml
+          \`\`\`yaml
+          image:
+            repository: schmiddim/spacelift-pushgateway
+            tag: \"${{ steps.version.outputs.new_tag }}\"
+          \`\`\`"
+      - name: Job Summary
+        run: |
+          TAG=${{ steps.version.outputs.new_tag }}
+          IMAGE="schmiddim/spacelift-pushgateway"
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Release ${TAG}
+
+          ### Docker Pull
+          \`\`\`
+          docker pull ${IMAGE}:${TAG}
+          \`\`\`
+
+          ### Helm values.yaml
+          \`\`\`yaml
+          image:
+            repository: ${IMAGE}
+            tag: "${TAG}"
+          \`\`\`
+
+          ### Links
+          - [DockerHub](https://hub.docker.com/r/${IMAGE}/tags?name=${TAG})
+          - [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/${TAG})
+          EOF
