@@ -3,6 +3,12 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver tag to release (e.g. v0.0.5). Leave empty to auto-increment patch.'
+        required: false
+        default: ''
 jobs:
   build_and_test:
     name: Build & Test the Application
@@ -13,7 +19,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.23.0'
+          go-version: '1.26.0'
       - name: Tidy Go modules
         run: |
           go mod tidy
@@ -66,7 +72,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -76,3 +82,62 @@ jobs:
           platforms: linux/amd64, linux/arm64
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
+
+  release:
+    name: Release (Dependabot Semver)
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.author.name, 'dependabot') ||
+      contains(github.event.head_commit.message, 'Bump ') ||
+      contains(github.event.head_commit.message, 'bump ')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute next patch version
+        id: version
+        run: |
+          git fetch --tags
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            NEW_TAG="${{ github.event.inputs.version }}"
+            # ensure v prefix
+            [[ "$NEW_TAG" != v* ]] && NEW_TAG="v${NEW_TAG}"
+          else
+            LAST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname | head -n1)
+            if [[ -z "$LAST_TAG" ]]; then
+              LAST_TAG="v0.0.0"
+            fi
+            echo "Last tag: $LAST_TAG"
+            MAJOR=$(echo "$LAST_TAG" | sed 's/v//' | cut -d. -f1)
+            MINOR=$(echo "$LAST_TAG" | sed 's/v//' | cut -d. -f2)
+            PATCH=$(echo "$LAST_TAG" | sed 's/v//' | cut -d. -f3)
+            NEW_PATCH=$((PATCH + 1))
+            NEW_TAG="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          fi
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.version.outputs.new_tag }}
+          git push origin ${{ steps.version.outputs.new_tag }}
+      - name: Login to DockerHub
+        uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build and push Docker image with Semver tag
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            schmiddim/spacelift-pushgateway:${{ steps.version.outputs.new_tag }}
+          platforms: linux/amd64, linux/arm64

@@ -5,15 +5,27 @@
 
 version: 2
 updates:
-  - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
       interval: "daily"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: daily
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
   - package-ecosystem: docker
-    directory: "/" # Location of package manifests
+    directory: "/"
     schedule:
       interval: "daily"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
