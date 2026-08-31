@@ -4,12 +4,12 @@ go 1.26.0
 
 require (
 	github.com/prometheus/client_golang v1.24.1
-	github.com/sirupsen/logrus v1.10.1
+	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
 	github.com/yalp/jsonpath v0.0.0-20180802001716-5cc68e5049a0
-	k8s.io/client-go v0.36.4
+	k8s.io/client-go v0.37.0
 )
 
 require (
