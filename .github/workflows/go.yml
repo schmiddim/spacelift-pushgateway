@@ -3,12 +3,20 @@ on:
   push:
     branches:
       - master
+      - main
   workflow_dispatch:
     inputs:
       version:
         description: 'Semver tag to release (e.g. v0.0.5). Leave empty to auto-increment patch.'
         required: false
         default: ''
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build_and_test:
@@ -52,26 +60,32 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-      - name: Login to DockerHub
-        uses: docker/login-action@v4.6.0
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Set image metadata
-        id: meta
+        id: metadata
         run: echo "commit_id=${GITHUB_SHA}" >> $GITHUB_OUTPUT
-      - name: Build and push (latest + commit sha)
+      - name: Extract metadata (tags, labels) for Docker
+        uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value={{date 'YYYYMMDD-hhmmss' tz='Europe/Berlin'}}
+            type=sha
+            type=raw,value=${{ steps.metadata.outputs.commit_id }}
+      - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          context: .
-          push: true
-          tags: |
-            schmiddim/spacelift-pushgateway:latest
-            schmiddim/spacelift-pushgateway:${{ steps.meta.outputs.commit_id }}
-          platforms: linux/amd64, linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.ref_name == github.event.repository.default_branch }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+  
   release:
     name: Release (Semver)
     needs: build_and_test
@@ -112,16 +126,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag ${{ steps.version.outputs.new_tag }}
           git push origin ${{ steps.version.outputs.new_tag }}
-      - name: Login to DockerHub
-        uses: docker/login-action@v4.6.0
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Re-tag existing image with Semver (no rebuild)
         run: |
           docker buildx imagetools create \
-            --tag schmiddim/spacelift-pushgateway:${{ steps.version.outputs.new_tag }} \
-            schmiddim/spacelift-pushgateway:${{ needs.build_and_test.outputs.commit_id }}
+            --tag ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.new_tag }} \
+            ${{ env.IMAGE_NAME }}:${{ needs.build_and_test.outputs.commit_id }}
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -131,19 +146,19 @@ jobs:
             --notes "## Docker Image
 
           \`\`\`
-          docker pull schmiddim/spacelift-pushgateway:${{ steps.version.outputs.new_tag }}
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.new_tag }}
           \`\`\`
 
           ### Helm values.yaml
           \`\`\`yaml
           image:
-            repository: schmiddim/spacelift-pushgateway
+            repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
             tag: \"${{ steps.version.outputs.new_tag }}\"
           \`\`\`"
       - name: Job Summary
         run: |
           TAG=${{ steps.version.outputs.new_tag }}
-          IMAGE="schmiddim/spacelift-pushgateway"
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           cat >> $GITHUB_STEP_SUMMARY << EOF
           ## Release ${TAG}
 
